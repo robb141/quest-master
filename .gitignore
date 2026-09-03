@@ -1,0 +1,13 @@
+# Local game save state — regenerated on first run
+quest.db
+
+# Python
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Editor / OS
+.idea/
+.vscode/
+.DS_Store
