@@ -1,62 +1,113 @@
 # Quest Master — a text-RPG MCP server
 
-A tiny, self-contained [MCP](https://modelcontextprotocol.io) server that turns
-Claude into a Dungeon Master running a persistent (SQLite-backed) text adventure.
-No API keys needed.
+A self-contained [MCP](https://modelcontextprotocol.io) server that turns Claude into a
+Dungeon Master running a persistent, SQLite-backed text adventure. No API keys needed.
 
-> ⚠️ **This project was vibecoded** — written quickly and conversationally with an
-> AI assistant, optimised for "fun to poke at" rather than production robustness.
-> Expect rough edges: single global character, a connection per query, no auth,
-> no migrations. Read it as a demo of MCP's three building blocks, not a template.
+It is also a worked example of **six** MCP capabilities, because the game gives each one a
+real job rather than a toy one:
+
+| Capability | What it does here |
+|---|---|
+| **Tools** | `attack`, `flee`, `rest`, `equip`, `buy`, … — actions with consequences, each returning typed `structuredContent` |
+| **Resources** | `quest://character`, `quest://log`, `quest://encounter`, `quest://bestiary`, `quest://shop` |
+| **Resource templates** | `quest://character/{name}` — read any save slot without loading it |
+| **Prompts** | `narrate_scene`, `recap_quest`, `plan_next_move` |
+| **Sampling** | `describe_enemy` — the *server* asks the *client's* model for prose |
+| **Elicitation** | swinging at very low HP asks the *player* to confirm first |
+| **Completion** | argument autocomplete for prompt and template arguments |
+
+Sampling and elicitation degrade gracefully: a client that does not advertise the
+capability simply never sees them, and every tool still works.
 
 ## How it works
 
-`server.py` is an MCP server, not a program you interact with directly. An MCP
-client (Claude Code) launches it as a subprocess and speaks JSON-RPC to it over
-stdio.
+`quest-master` is an MCP server, not a program you interact with directly. An MCP client
+(Claude Code) launches it as a subprocess and speaks JSON-RPC to it over stdio.
 
-- The **server** owns the *mechanics*: dice math, HP, gold/XP, level-ups, and
-  persistence to `quest.db`. Its tool return values are terse status strings.
-- **Claude** (in the client) owns the *story*: it decides which tool to call
-  based on what you type, then turns the status strings into narration and
-  offers you choices.
+- The **server** owns the *mechanics*: dice, HP, encounters, gold/XP, level-ups, and
+  persistence to `quest.db`.
+- **Claude** owns the *story*: it decides which tool to call, then turns the result into
+  narration and offers you choices.
 
-So a turn looks like: you say "I attack the goblin" → Claude emits a structured
-`attack` tool call with the args it inferred → the client sends it to the server
-→ `attack()` rolls, updates `quest.db`, appends to the log, returns a status line
-→ Claude narrates the result.
+A turn looks like: you say "I attack the goblin" → Claude calls `attack` → the server rolls,
+updates `quest.db`, appends to the log, and returns both a narration string and a structured
+result → Claude narrates it.
+
+The important detail is that **the enemy's HP lives on the server**. Calling `attack` again
+continues the same fight; the goblin stays wounded. That is what makes a fight winnable —
+or losable.
 
 ## Setup
 
 ```bash
 python3 -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt
+pip install -e ".[dev]"
 ```
 
 ## Run it
 
 ```bash
-source venv/bin/activate
-python server.py          # runs the server directly (stdio transport)
-python test_client.py     # smoke test: exercises every tool/resource
+quest-master                        # stdio (what an MCP client launches)
+quest-master --transport streamable-http --port 8000
+quest-master --db /tmp/scratch.db --seed 42   # throwaway save, reproducible dice
+pytest                              # the test suite
 ```
+
+`$QUEST_DB` and `$QUEST_SEED` do the same as `--db` and `--seed`.
 
 ## Connect it to Claude Code
 
 ```bash
-claude mcp add quest-master -- $(pwd)/venv/bin/python $(pwd)/server.py
+claude mcp add quest-master -- $(pwd)/venv/bin/quest-master
 ```
 
 Then start a new `claude` session and say something like:
-"Create a rogue character named Elowen and start our quest."
+*"Create a rogue named Elowen and start our quest."*
 
-## What it exposes
+## Playing
 
-- **Tools** (actions the model can call): `create_character`, `roll_dice`,
-  `attack`, `rest`, `add_item`
-- **Resources** (read-only context): `quest://character`, `quest://log`
-- **Prompts** (reusable templates): `narrate_scene`
+Start with `create_character`. Fight things with `attack` — repeatedly, until something
+dies. Read `quest://bestiary` to see what you are up against and `quest://shop` for what
+gold buys.
 
-Game state lives in `quest.db`, created on first run and **not** tracked by git
-(it's your local save file).
+The rules that matter:
+
+- **Fights persist.** `attack` with an `enemy_name` starts a fight; `attack` with no
+  arguments continues it. You cannot switch targets mid-fight — `flee` first.
+- **Resting costs a ration.** With one you heal fully; without one you barely recover.
+  You cannot rest mid-fight.
+- **Death is real.** At 0 HP the character cannot act until `revive` — which costs half
+  their gold — or you start a new save.
+- **Gear matters.** Your equipped weapon sets your damage dice, so `buy` a better one and
+  `equip` it. Potions heal, elixirs raise max HP, trinkets are just money.
+- **Saves are separate.** `create_character` opens a new slot rather than overwriting;
+  `list_characters` and `switch_character` move between them.
+
+## Layout
+
+```
+src/quest_master/
+  db.py        SQLite connection + ordered schema migrations
+  content.py   bestiary, weapons, consumables, shop  (balance lives here)
+  engine.py    game rules — no MCP, takes an explicit Database and Random
+  models.py    typed tool results (the structuredContent schemas)
+  server.py    the MCP surface
+tests/         pytest, against throwaway databases with seeded dice
+```
+
+`server.py` at the repo root is a shim that keeps v0.1 MCP registrations working.
+
+## Upgrading from v0.1
+
+An existing `quest.db` is migrated in place on first run — your character, gold, XP,
+inventory and log are preserved and become save slot 1. The migration is covered by
+[tests/test_migrations.py](tests/test_migrations.py).
+
+Notable behaviour changes:
+
+- `attack` no longer takes an `enemy_hp` argument; the encounter is server-side state.
+- `create_character` no longer wipes your existing hero; it creates a new save slot.
+- Invalid input (`roll_dice(sides=1)`, acting with no character) now raises a real tool
+  error instead of returning a string that looks like success.
+- Tools return structured objects, not bare strings. The prose is in the `narration` field.

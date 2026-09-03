@@ -1,0 +1,51 @@
+[project]
+name = "quest-master"
+version = "0.2.0"
+description = "A persistent text-RPG engine exposed as an MCP server — a worked demo of tools, resources, prompts, sampling, and elicitation."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Robert Solava", email = "57658116+robb141@users.noreply.github.com" }]
+keywords = ["mcp", "model-context-protocol", "rpg", "llm"]
+
+dependencies = [
+    "mcp==2.0.0",
+    "mcp-types==2.0.0",
+    "pydantic>=2.9",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.8",
+    "mypy>=1.13",
+]
+
+[project.scripts]
+quest-master = "quest_master.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/quest_master"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+filterwarnings = ["error::DeprecationWarning:quest_master.*"]
+
+[tool.ruff]
+line-length = 110
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["src", "tests"]
+strict = true
+warn_unused_ignores = true

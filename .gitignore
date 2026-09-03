@@ -1,11 +1,20 @@
 # Local game save state — regenerated on first run
 quest.db
+quest.db-wal
+quest.db-shm
+*.db-journal
 
 # Python
 venv/
+.venv/
 __pycache__/
 *.pyc
+*.egg-info/
+build/
+dist/
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 
 # Editor / OS
 .idea/
