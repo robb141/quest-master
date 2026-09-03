@@ -110,15 +110,22 @@ The `recommended_level` on each monster is measured, not guessed —
 and reports win rate and median fight length:
 
 ```
-monster              L1/rusty     L2/short     L4/battl     L6/warha
-rat                 100%/   3    100%/   3    100%/   2    100%/   1
-goblin               84%/   6     99%/   5    100%/   3    100%/   2
-wolf                 58%/   7     94%/   6    100%/   4    100%/   3
-bandit                8%/   7     48%/   8     98%/   6    100%/   4
-dragon                0%/   2      0%/   3      0%/   4      0%/   5
+monster              L1/rusty     L2/short     L6/warha    L11/flame
+goblin               84%/   6     99%/   5    100%/   2    100%/   1
+wolf                 58%/   7     94%/   6    100%/   3    100%/   2
+bandit                8%/   7     48%/   8    100%/   4    100%/   2
+basilisk              0%/   4      0%/   4     31%/  12    100%/   6
+dragon                0%/   2      0%/   3      0%/   5     86%/   7
 ```
 
-The dragon is a genuine endgame fight: 20% at level 10, 94% at level 14.
+It also measures the climb itself, which is what balance is really about in a game
+played one tool call at a time:
+
+```
+level 1 -> 5:   24 fights, 148 attack calls
+level 1 -> 8:   33 fights, 223 attack calls
+level 1 -> 11:  41 fights, 308 attack calls   (dragon-ready)
+```
 
 ## Upgrading from v0.1
 

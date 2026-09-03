@@ -65,8 +65,14 @@ class QuestError(Exception):
 
 
 def xp_threshold(level: int) -> int:
-    """Total XP required to *be* ``level``. Level 2 at 50, 3 at 150, 4 at 300."""
-    return 25 * level * (level - 1)
+    """Total XP required to *be* ``level``. Level 2 at 40, 3 at 120, 4 at 240.
+
+    Deliberately gentler than it looks it should be: a fight at level 10 runs
+    twice as many rounds as one at level 2, so a curve that only counts XP
+    makes each level cost progressively more real play. See
+    ``tools/simulate_balance.py``.
+    """
+    return 20 * level * (level - 1)
 
 
 def player_armor(level: int) -> int:

@@ -237,8 +237,8 @@ def test_combat_is_deterministic_under_a_fixed_seed(tmp_path: Path) -> None:
 
 def test_xp_thresholds_climb(db: Database) -> None:
     assert xp_threshold(1) == 0
-    assert xp_threshold(2) == 50
-    assert xp_threshold(3) == 150
+    assert xp_threshold(2) == 40
+    assert xp_threshold(3) == 120
     assert xp_threshold(2) < xp_threshold(3) < xp_threshold(4)
 
 
@@ -531,3 +531,17 @@ def test_an_ongoing_fight_reports_its_threat(db: Database, rng: random.Random) -
     assert result.encounter is not None
     assert result.encounter.threat == "hopeless"
     assert result.encounter.recommended_level == BESTIARY["ogre"].recommended_level
+
+
+def test_the_ladder_has_no_gaps() -> None:
+    """Every level from 1 up to the endgame has something fair to fight.
+
+    Levels 7-13 used to have nothing between the ogre and the dragon, so the
+    climb to the only boss meant grinding one monster ~40 times.
+    """
+    fair_from = {m.recommended_level for m in BESTIARY.values()}
+    top = max(fair_from)
+    for level in range(1, top + 1):
+        reachable = [m for m in BESTIARY.values() if m.recommended_level <= level]
+        best = max(m.recommended_level for m in reachable)
+        assert level - best <= 2, f"level {level} has nothing fresh to fight (best is {best})"

@@ -66,3 +66,51 @@ def table(levels_weapons: list[tuple[int, str]]) -> None:
 if __name__ == "__main__":
     print(f"win% / median rounds  ({TRIALS} trials)\n")
     table([(1, "rusty dagger"), (2, "short sword"), (4, "battleaxe"), (6, "warhammer")])
+
+
+def progress_to(target_level: int, seed: int) -> tuple[int, int, int]:
+    """Play a character from level 1 to `target_level`, fighting sensibly.
+
+    Always takes the toughest monster that is still a fair fight, rests to full
+    between fights, and buys the best weapon it can afford. Returns
+    (fights, rounds, gold spent) — the real cost of the climb.
+    """
+    from quest_master.content import SHOP, WEAPONS
+
+    database = D.connect(":memory:")
+    rng = random.Random(seed)
+    E.create_character(database, rng, "Climber", "rogue")
+    fights = rounds = spent = 0
+
+    while E.character_view(database).level < target_level:
+        char = E.character_view(database)
+        # Best affordable upgrade.
+        for name, weapon in sorted(WEAPONS.items(), key=lambda kv: -kv[1].price):
+            if weapon.price and weapon.price <= char.gold and name != char.weapon:
+                if WEAPONS[name].damage.sides > WEAPONS[char.weapon].damage.sides:
+                    E.buy(database, name, 1)
+                    E.equip(database, name)
+                    spent += SHOP[name]
+                break
+        # Toughest fair fight available.
+        options = [m for m in BESTIARY.values() if m.recommended_level <= char.level]
+        target = max(options, key=lambda m: m.recommended_level)
+        with database.transaction() as conn:
+            conn.execute("UPDATE character SET hp = max_hp, dead = 0")
+        result = E.attack(database, rng, target.name)
+        fights += 1
+        while not (result.enemy_defeated or result.character_died):
+            rounds += 1
+            result = E.attack(database, rng)
+        rounds += 1
+        if fights > 5000:
+            break
+    database.close()
+    return fights, rounds, spent
+
+
+def progression_report(target_level: int = 14, trials: int = 12) -> None:
+    runs = [progress_to(target_level, s) for s in range(trials)]
+    fights = statistics.median(r[0] for r in runs)
+    rounds = statistics.median(r[1] for r in runs)
+    print(f"level 1 -> {target_level}: {fights:.0f} fights, {rounds:.0f} attack calls (median)")
