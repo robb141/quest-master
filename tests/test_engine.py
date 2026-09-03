@@ -7,6 +7,7 @@ v0.1 engine shipped with.
 from __future__ import annotations
 
 import random
+import re
 from pathlib import Path
 
 import pytest
@@ -426,3 +427,48 @@ def test_inventory_is_per_save(db: Database, rng: random.Random) -> None:
     engine.create_character(db, rng, "Bryn", "warrior")
     assert "bone charm" not in engine.character_view(db).inventory
     assert engine.character_view(db, "Elowen").inventory["bone charm"] == 3
+
+
+# --------------------------------------------------------------------------
+# Narration format
+# --------------------------------------------------------------------------
+
+# " — Elowen 15/20 HP" or " — Elowen 15/20 HP, goblin 4/12 HP"
+STATUS_CLAUSE = re.compile(r" — .+ \d+/\d+ HP(, .+ \d+/\d+ HP)?$")
+
+
+def every_narration(db: Database, rng: random.Random) -> list[tuple[str, str]]:
+    """Drive one of each mutating tool and collect what it narrated."""
+    out = [("create_character", engine.create_character(db, rng, "Elowen", "rogue").narration)]
+    out.append(("attack (open)", engine.attack(db, rng, "goblin").narration))
+    out.append(("attack (continue)", engine.attack(db, rng).narration))
+    out.append(("add_item", engine.add_item(db, "battleaxe").narration))
+    out.append(("equip", engine.equip(db, "battleaxe").narration))
+    out.append(("flee", engine.flee(db, rng).narration))
+    while engine.encounter_view(db) is not None:  # a failed escape keeps the fight open
+        engine.flee(db, rng)
+    set_state(db, hp=4)
+    out.append(("rest", engine.rest(db, rng).narration))
+    out.append(("buy", engine.buy(db, "ration", 1).narration))
+    out.append(("sell", engine.sell(db, "rusty dagger", 1).narration))
+    out.append(("switch_character", engine.switch_character(db, "Elowen").narration))
+    set_state(db, hp=0, dead=1)
+    out.append(("revive", engine.revive(db).narration))
+    return out
+
+
+def test_every_narration_ends_with_the_status_clause(db: Database, rng: random.Random) -> None:
+    """The DM quotes these numbers, so they have to be in the same place every time."""
+    for tool, narration in every_narration(db, rng):
+        assert STATUS_CLAUSE.search(narration), f"{tool} has no status clause: {narration!r}"
+
+
+def test_no_narration_leaks_a_function_name(db: Database, rng: random.Random) -> None:
+    """Narration is shown to the player; tool names in it break character.
+
+    Error messages are exempt on purpose — those go to the model, and naming
+    the tool to call is what makes them actionable.
+    """
+    for tool, narration in every_narration(db, rng):
+        assert "()" not in narration, f"{tool} leaks a function name: {narration!r}"
+        assert "quest://" not in narration, f"{tool} leaks a resource URI: {narration!r}"

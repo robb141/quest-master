@@ -295,11 +295,12 @@ def _press_the_attack_question(char: CharacterView) -> str:
 def _gave_ground_narration(char: CharacterView) -> str:
     """Prose for a swing the player called off — in character, numbers included."""
     enemy = _current_encounter()
-    circling = f" as the {enemy.enemy_name} circles on {enemy.hp}/{enemy.max_hp}" if enemy else ""
-    return (
-        f"{char.name} checks the swing and gives ground on {char.hp}/{char.max_hp} HP, "
-        f"blade up, breathing hard{circling}."
-    )
+    circling = f" as the {enemy.enemy_name} circles" if enemy else ""
+    status = f"{char.name} {char.hp}/{char.max_hp} HP"
+    if enemy:
+        status += f", {enemy.enemy_name} {enemy.hp}/{enemy.max_hp} HP"
+    # Same trailing status clause every engine narration uses.
+    return f"{char.name} checks the swing and gives ground, blade up, breathing hard{circling}. — {status}"
 
 
 class ConfirmRiskyAttack(BaseModel):

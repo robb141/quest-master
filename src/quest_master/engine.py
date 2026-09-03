@@ -232,6 +232,20 @@ def _clear_encounter(conn: sqlite3.Connection, character_id: int) -> None:
     conn.execute("DELETE FROM encounter WHERE character_id = ?", (character_id,))
 
 
+def _status(char: _Char, enc: _Encounter | None = None) -> str:
+    """The status clause every narration ends with.
+
+    Uniform shape and placement matter: the DM reads `narration` to write its
+    prose, and when hit points appear in a different form per tool — or not at
+    all — it either drops them or invents them. Ending every line the same way
+    means the numbers are always there to quote.
+    """
+    parts = [f"{char.name} {char.hp}/{char.max_hp} HP"]
+    if enc is not None and enc.hp > 0:
+        parts.append(f"{enc.monster.name} {enc.hp}/{enc.max_hp} HP")
+    return " — " + ", ".join(parts)
+
+
 # --------------------------------------------------------------------------
 # Character management
 # --------------------------------------------------------------------------
@@ -268,9 +282,8 @@ def create_character(db: Database, rng: Random, name: str, char_class: str) -> C
         _log(conn, char_id, f"{clean_name} the {clean_class} begins their quest!")
         char = _reload(conn, char_id)
         narration = (
-            f"🧙 {clean_name} the {clean_class} is created! "
-            f"HP {STARTING_MAX_HP}/{STARTING_MAX_HP}, {STARTING_GOLD} gold, "
-            f"a rusty dagger, and 2 rations."
+            f"🧙 {clean_name} the {clean_class} takes up the quest with {STARTING_GOLD} gold, "
+            f"a rusty dagger, and 2 rations.{_status(char)}"
         )
         return CharacterResult(narration=narration, character=_view(conn, char))
 
@@ -312,7 +325,10 @@ def switch_character(db: Database, name: str) -> CharacterResult:
         conn.execute("UPDATE active_save SET character_id = ? WHERE id = 1", (row["id"],))
         char = _Char.from_row(row)
         return CharacterResult(
-            narration=f"📖 Loaded {char.name}, level {char.level} {char.char_class}.",
+            narration=(
+                f"📖 Loaded {char.name}, level {char.level} {char.char_class}."
+                f"{_status(char, _get_encounter(conn, char.id))}"
+            ),
             character=_view(conn, char),
         )
 
@@ -352,12 +368,12 @@ def revive(db: Database) -> CharacterResult:
             (restored, paid, char.id),
         )
         _clear_encounter(conn, char.id)
+        revived = _reload(conn, char.id)
         narration = (
-            f"⛩️ The shrine takes {paid} gold and breathes life back into {char.name} "
-            f"({restored}/{char.max_hp} HP)."
+            f"⛩️ The shrine takes {paid} gold and breathes life back into {char.name}.{_status(revived)}"
         )
         _log(conn, char.id, narration)
-        return CharacterResult(narration=narration, character=_view(conn, _reload(conn, char.id)))
+        return CharacterResult(narration=narration, character=_view(conn, revived))
 
 
 # --------------------------------------------------------------------------
@@ -431,11 +447,11 @@ def attack(db: Database, rng: Random, enemy_name: str | None = None) -> AttackRe
                 "VALUES (?, ?, ?, ?, ?, ?, 0)",
                 (char.id, monster.key, monster.name, monster.tier, enc.hp, enc.max_hp),
             )
-            lines.append(f"⚔️ {char.name} closes with {monster.name} ({enc.hp} HP).")
+            lines.append(f"⚔️ {char.name} closes with the {monster.name}.")
         elif enemy_name and enemy_name.strip().lower() != enc.monster.name.lower():
             lines.append(
-                f"(Still locked in combat with {enc.monster.name} — "
-                f"flee() first to disengage before facing {enemy_name.strip()}.)"
+                f"(Still locked in combat with the {enc.monster.name}; "
+                f"break away before facing {enemy_name.strip()}.)"
             )
 
         monster = enc.monster
@@ -455,7 +471,7 @@ def attack(db: Database, rng: Random, enemy_name: str | None = None) -> AttackRe
                 damage *= 2
                 lines.append(f"💥 Critical! {char.name}'s {char.weapon} bites deep for {damage} damage.")
             else:
-                lines.append(f"🗡️ {char.name} hits {monster.name} for {damage} damage.")
+                lines.append(f"🗡️ {char.name} hits the {monster.name} for {damage} damage.")
         else:
             lines.append(
                 f"🌀 {char.name} swings and misses (rolled {attack_roll} vs armour {monster.armor})."
@@ -482,7 +498,7 @@ def attack(db: Database, rng: Random, enemy_name: str | None = None) -> AttackRe
                 _give(conn, char.id, item, 1)
             _clear_encounter(conn, char.id)
             rewards = Rewards(xp=xp, gold=gold, loot=loot)
-            lines.append(f"💀 {monster.name} falls! +{xp} XP, +{gold} gold.")
+            lines.append(f"💀 The {monster.name} falls! +{xp} XP, +{gold} gold.")
             if loot:
                 lines.append(f"🎁 Looted: {', '.join(loot)}.")
             levels_gained, level_lines = _apply_level_ups(conn, rng, char)
@@ -494,7 +510,6 @@ def attack(db: Database, rng: Random, enemy_name: str | None = None) -> AttackRe
             )
             enc.hp = enemy_hp
             enc.rounds += 1
-            lines.append(f"({monster.name}: {enemy_hp}/{enc.max_hp} HP)")
 
             # --- the enemy's reply ----------------------------------------
             enemy_roll = rng.randint(1, 20) + monster.attack_bonus
@@ -502,11 +517,9 @@ def attack(db: Database, rng: Random, enemy_name: str | None = None) -> AttackRe
             if counter_hit:
                 taken = monster.damage.roll(rng)
                 char.hp = max(0, char.hp - taken)
-                lines.append(
-                    f"🩸 {monster.name} strikes back for {taken} ({char.name}: {char.hp}/{char.max_hp} HP)."
-                )
+                lines.append(f"🩸 The {monster.name} strikes back for {taken}.")
             else:
-                lines.append(f"🛡️ {monster.name} lunges and {char.name} turns the blow aside.")
+                lines.append(f"🛡️ The {monster.name} lunges and {char.name} turns the blow aside.")
 
             died = char.hp == 0
             conn.execute(
@@ -515,14 +528,11 @@ def attack(db: Database, rng: Random, enemy_name: str | None = None) -> AttackRe
             )
             if died:
                 _clear_encounter(conn, char.id)
-                lines.append(
-                    f"☠️ {char.name} falls to {monster.name}. Call revive() at the shrine "
-                    f"to continue this save."
-                )
+                lines.append(f"☠️ {char.name} falls to the {monster.name}. Only the shrine can help now.")
 
-        narration = " ".join(lines)
-        _log(conn, char.id, narration)
         fresh = _reload(conn, char.id)
+        narration = " ".join(lines) + _status(fresh, None if (defeated or died) else enc)
+        _log(conn, char.id, narration)
         return AttackResult(
             narration=narration,
             attack_roll=attack_roll,
@@ -555,27 +565,26 @@ def flee(db: Database, rng: Random) -> FleeResult:
         died = False
         if escaped:
             _clear_encounter(conn, char.id)
-            narration = f"🏃 {char.name} breaks away from {monster.name} and slips into the dark."
+            narration = f"🏃 {char.name} breaks away from the {monster.name} and slips into the dark."
         else:
             taken = monster.damage.roll(rng)
             char.hp = max(0, char.hp - taken)
             died = char.hp == 0
             conn.execute("UPDATE character SET hp = ?, dead = ? WHERE id = ?", (char.hp, int(died), char.id))
             conn.execute("UPDATE encounter SET rounds = rounds + 1 WHERE character_id = ?", (char.id,))
-            narration = (
-                f"🚫 {monster.name} cuts off the retreat and lands {taken} damage "
-                f"({char.name}: {char.hp}/{char.max_hp} HP)."
-            )
+            narration = f"🚫 The {monster.name} cuts off the retreat and lands {taken} damage."
             if died:
                 _clear_encounter(conn, char.id)
-                narration += f" ☠️ {char.name} falls. Call revive() to continue this save."
+                narration += f" ☠️ {char.name} falls. Only the shrine can help now."
+        fled = _reload(conn, char.id)
+        narration += _status(fled, None if (escaped or died) else _get_encounter(conn, char.id))
         _log(conn, char.id, narration)
         return FleeResult(
             narration=narration,
             escaped=escaped,
             damage_taken=taken,
             character_died=died,
-            character=_view(conn, _reload(conn, char.id)),
+            character=_view(conn, fled),
         )
 
 
@@ -601,20 +610,19 @@ def rest(db: Database, rng: Random) -> CharacterResult:
         if held.get(REST_FUEL, 0) > 0:
             _take(conn, char.id, REST_FUEL, 1)
             conn.execute("UPDATE character SET hp = max_hp WHERE id = ?", (char.id,))
-            narration = (
-                f"🏕️ {char.name} eats a ration and sleeps soundly — fully healed "
-                f"({char.max_hp}/{char.max_hp} HP)."
-            )
+            narration = f"🏕️ {char.name} eats a ration and sleeps soundly, waking whole."
         else:
             healed = max(1, char.max_hp // 4)
             new_hp = min(char.max_hp, char.hp + healed)
             conn.execute("UPDATE character SET hp = ? WHERE id = ?", (new_hp, char.id))
             narration = (
-                f"🥣 No rations left. {char.name} sleeps hungry and recovers only {new_hp - char.hp} HP "
-                f"({new_hp}/{char.max_hp}). Buy rations from the shop."
+                f"🥣 No rations left. {char.name} sleeps hungry and recovers only "
+                f"{new_hp - char.hp} HP. The shop sells rations."
             )
+        rested = _reload(conn, char.id)
+        narration += _status(rested)
         _log(conn, char.id, narration)
-        return CharacterResult(narration=narration, character=_view(conn, _reload(conn, char.id)))
+        return CharacterResult(narration=narration, character=_view(conn, rested))
 
 
 def add_item(db: Database, item: str, qty: int = 1) -> CharacterResult:
@@ -627,9 +635,10 @@ def add_item(db: Database, item: str, qty: int = 1) -> CharacterResult:
         char = _active(conn)
         _give(conn, char.id, name, qty)
         note = "" if known_item(name) else " (a curio with no mechanical effect)"
-        narration = f"🎒 Added {qty}x {name} to {char.name}'s pack{note}."
+        stocked = _reload(conn, char.id)
+        narration = f"🎒 Added {qty}x {name} to {char.name}'s pack{note}.{_status(stocked)}"
         _log(conn, char.id, narration)
-        return CharacterResult(narration=narration, character=_view(conn, _reload(conn, char.id)))
+        return CharacterResult(narration=narration, character=_view(conn, stocked))
 
 
 def use_item(db: Database, rng: Random, item: str) -> CharacterResult:
@@ -659,9 +668,10 @@ def use_item(db: Database, rng: Random, item: str) -> CharacterResult:
             char.hp = min(char.max_hp, char.hp + healed)
             parts.append(f"recovers {char.hp - before} HP")
         conn.execute("UPDATE character SET hp = ?, max_hp = ? WHERE id = ?", (char.hp, char.max_hp, char.id))
-        narration = f"🧪 {char.name} uses the {name} and {', '.join(parts)} ({char.hp}/{char.max_hp})."
+        used = _reload(conn, char.id)
+        narration = f"🧪 {char.name} uses the {name} and {', '.join(parts)}.{_status(used)}"
         _log(conn, char.id, narration)
-        return CharacterResult(narration=narration, character=_view(conn, _reload(conn, char.id)))
+        return CharacterResult(narration=narration, character=_view(conn, used))
 
 
 def equip(db: Database, item: str) -> CharacterResult:
@@ -677,9 +687,13 @@ def equip(db: Database, item: str) -> CharacterResult:
         if char.weapon == name:
             raise QuestError(f"{char.name} is already wielding the {name}.")
         conn.execute("UPDATE character SET weapon = ? WHERE id = ?", (name, char.id))
-        narration = f"🗡️ {char.name} draws the {name} ({weapon.damage} damage). {weapon.description}"
+        armed = _reload(conn, char.id)
+        narration = (
+            f"🗡️ {char.name} draws the {name} ({weapon.damage} damage). "
+            f"{weapon.description}{_status(armed, _get_encounter(conn, char.id))}"
+        )
         _log(conn, char.id, narration)
-        return CharacterResult(narration=narration, character=_view(conn, _reload(conn, char.id)))
+        return CharacterResult(narration=narration, character=_view(conn, armed))
 
 
 def buy(db: Database, item: str, qty: int = 1) -> CharacterResult:
@@ -697,9 +711,10 @@ def buy(db: Database, item: str, qty: int = 1) -> CharacterResult:
             raise QuestError(f"{qty}x {name} costs {cost} gold; {char.name} has {char.gold}.")
         conn.execute("UPDATE character SET gold = gold - ? WHERE id = ?", (cost, char.id))
         _give(conn, char.id, name, qty)
-        narration = f"🪙 Bought {qty}x {name} for {cost} gold ({char.gold - cost} left)."
+        bought = _reload(conn, char.id)
+        narration = f"🪙 Bought {qty}x {name} for {cost} gold ({bought.gold} left).{_status(bought)}"
         _log(conn, char.id, narration)
-        return CharacterResult(narration=narration, character=_view(conn, _reload(conn, char.id)))
+        return CharacterResult(narration=narration, character=_view(conn, bought))
 
 
 def sell(db: Database, item: str, qty: int = 1) -> CharacterResult:
@@ -713,9 +728,10 @@ def sell(db: Database, item: str, qty: int = 1) -> CharacterResult:
         _take(conn, char.id, name, qty)
         payout = sell_price(name) * qty
         conn.execute("UPDATE character SET gold = gold + ? WHERE id = ?", (payout, char.id))
-        narration = f"🪙 Sold {qty}x {name} for {payout} gold ({char.gold + payout} total)."
+        sold = _reload(conn, char.id)
+        narration = f"🪙 Sold {qty}x {name} for {payout} gold ({sold.gold} total).{_status(sold)}"
         _log(conn, char.id, narration)
-        return CharacterResult(narration=narration, character=_view(conn, _reload(conn, char.id)))
+        return CharacterResult(narration=narration, character=_view(conn, sold))
 
 
 # --------------------------------------------------------------------------
