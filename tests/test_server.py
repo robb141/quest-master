@@ -113,6 +113,28 @@ async def test_server_advertises_its_full_surface(db_file: Path) -> None:
     assert {"narrate_scene", "recap_quest", "plan_next_move"} <= prompts
 
 
+async def test_instructions_require_lettered_choices(db_file: Path) -> None:
+    """The DM's brief reaches the client on initialize, and it must ask for
+    choices the player can answer with a single letter — prose choices buried in
+    a paragraph are what this replaced."""
+    async with session(db_file) as client:
+        result = await client.initialize()
+
+    assert result.instructions is not None
+    brief = result.instructions
+    assert "A, B, C" in brief
+    assert "single letter" in brief or "nothing but a letter" in brief
+    assert "write freely" in brief  # free text stays valid
+
+
+async def test_narration_prompt_asks_for_lettered_choices(db_file: Path) -> None:
+    async with session(db_file) as client:
+        rendered = await client.get_prompt("narrate_scene", {"setting": "a drowned chapel"})
+        body = rendered.messages[0].content
+        assert isinstance(body, types.TextContent)
+        assert "lettered list" in body.text
+
+
 async def test_tools_declare_output_schemas_and_annotations(db_file: Path) -> None:
     async with session(db_file) as client:
         tools = {t.name: t for t in (await client.list_tools()).tools}

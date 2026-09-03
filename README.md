@@ -71,6 +71,22 @@ Start with `create_character`. Fight things with `attack` — repeatedly, until 
 dies. Read `quest://bestiary` to see what you are up against and `quest://shop` for what
 gold buys.
 
+Every turn ends with your options as a lettered list, so you can play by typing a single
+letter:
+
+```
+The wolf circles, favouring its left foreleg. — Elowen 12/20 HP, dire wolf 5/16 HP
+
+  A  Press the attack while it's limping.
+  B  Give ground and back towards the treeline.
+  C  Throw the last of your rations to distract it.
+
+> b
+```
+
+Writing out what you want instead works exactly the same; the letters are a shortcut,
+not a menu you are trapped in.
+
 The rules that matter:
 
 - **Fights persist.** `attack` with an `enemy_name` starts a fight; `attack` with no

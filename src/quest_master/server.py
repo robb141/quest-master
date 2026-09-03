@@ -139,6 +139,15 @@ calls, so do not restart the fight each turn. If the character falls, only
 revive() can continue that save. Turn each tool's `narration` into vivid prose
 and offer the player two or three concrete choices.
 
+End every single turn with those choices as a lettered list — A, B, C, and at
+most D — each one a specific action the player could take right now, phrased in
+the fiction. The player will normally reply with nothing but a letter, so the
+letters must be unambiguous and every option must be something you can actually
+resolve on the next turn. Never bury the choices in a paragraph and never end a
+turn without them. They may also write freely instead of picking a letter: if
+what they describe is not on the list, do that instead and offer a fresh list
+afterwards.
+
 Every fight reports a `threat` — trivial, fair, dangerous, deadly or hopeless —
 for the character as they stand. Warn the player plainly before they commit to
 anything above "fair", and steer new characters at rats and goblins first.
@@ -649,7 +658,8 @@ def narrate_scene(setting: str) -> str:
         f"quest://character sheet and quest://encounter before you write, so the "
         f"scene matches the party's condition and any fight already underway. Then "
         f"vividly narrate what happens as the party enters: {setting}. Offer two or "
-        f"three concrete choices, use roll_dice for uncertain outcomes, and call "
+        f"three concrete choices as a lettered list (A, B, C) the player can answer "
+        f"with a single letter, use roll_dice for uncertain outcomes, and call "
         f"attack only when the player commits to a fight."
     )
 
@@ -671,7 +681,9 @@ def plan_next_move() -> str:
         "Read quest://character, quest://encounter, quest://bestiary and quest://shop. "
         "Advise the player on their best next move using the real numbers: whether they "
         "can survive another exchange, whether to flee, rest, buy a better weapon, or "
-        "press on. Be specific about which tool to call and why."
+        "press on. Lay the recommendation out as a lettered list (A, B, C) the player "
+        "can answer with a single letter, strongest option first, each with the reason "
+        "in one line."
     )
 
 
