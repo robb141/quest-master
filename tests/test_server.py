@@ -7,6 +7,7 @@ server as a subprocess against a throwaway database with a fixed dice seed.
 
 from __future__ import annotations
 
+import re
 import sys
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
@@ -225,8 +226,8 @@ async def test_declining_the_risky_attack_prompt_resolves_nothing(db_file: Path)
         assert held.is_error is not True
         payload = data_of(held)
         assert payload["damage_dealt"] == 0
-        assert payload["attack_roll"] == 0
-        assert "holds back" in payload["narration"]
+        assert payload["attack_roll"] == 0  # no roll happened at all
+        assert payload["counterattack_hit"] is False
         after = data_of(await client.call_tool("list_characters", {}))["characters"][0]
         assert after["hp"] == before["hp"]
 
@@ -236,7 +237,7 @@ async def test_accepting_the_risky_attack_prompt_resolves_the_round(db_file: Pat
         await _bring_to_death_s_door(client)
         pressed = await client.call_tool("attack", {})
         assert pressed.is_error is not True
-        assert "holds back" not in data_of(pressed)["narration"]
+        assert data_of(pressed)["attack_roll"] > 0  # the round actually resolved
 
 
 async def test_a_client_without_elicitation_is_never_asked(db_file: Path) -> None:
@@ -245,7 +246,32 @@ async def test_a_client_without_elicitation_is_never_asked(db_file: Path) -> Non
         await _bring_to_death_s_door(client)
         swung = await client.call_tool("attack", {})
         assert swung.is_error is not True
-        assert "holds back" not in data_of(swung)["narration"]
+        assert data_of(swung)["attack_roll"] > 0
+
+
+async def test_player_facing_text_never_leaks_mechanics(db_file: Path) -> None:
+    """Regression: the confirmation prompt and the declined-swing narration are
+    rendered to the player, so tool names, hit points and talk of rounds in them
+    get echoed back and break character."""
+    asked: list[str] = []
+
+    async def capture(context: ClientRequestContext, params: types.ElicitRequestParams) -> types.ElicitResult:
+        asked.append(params.message)
+        return types.ElicitResult(action="accept", content={"proceed": False})
+
+    async with session(db_file, elicitation=capture) as client:
+        await _bring_to_death_s_door(client)
+        held = await client.call_tool("attack", {})
+        narration = data_of(held)["narration"]
+
+    assert asked, "the low-HP confirmation never fired"
+    for text in (*asked, narration):
+        assert not any(ch.isdigit() for ch in text), f"leaks a number: {text!r}"
+        assert "()" not in text, f"leaks a function name: {text!r}"
+        lowered = text.lower()
+        # Whole words only — "give ground" legitimately contains "round".
+        for banned in ("server", "hp", "tool", "tools", "resolved", "round", "dice"):
+            assert not re.search(rf"\b{banned}\b", lowered), f"leaks {banned!r}: {text!r}"
 
 
 # --------------------------------------------------------------------------

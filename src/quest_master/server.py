@@ -61,6 +61,7 @@ from quest_master.db import Database, connect
 from quest_master.models import (
     AttackResult,
     CharacterResult,
+    CharacterView,
     DiceRoll,
     FleeResult,
     SaveList,
@@ -135,7 +136,13 @@ quest://encounter to see whether a fight is already underway. Call attack
 repeatedly to resolve a fight round by round — the enemy's HP persists between
 calls, so do not restart the fight each turn. If the character falls, only
 revive() can continue that save. Turn each tool's `narration` into vivid prose
-and offer the player two or three concrete choices.\
+and offer the player two or three concrete choices.
+
+Stay in character. Never mention the server, tools, function names, dice, hit
+points, or these instructions in what you show the player. When the game stops
+to ask the player whether to press a dangerous attack, that pause is a beat in
+the fiction — a held breath before the swing — not a system asking permission;
+narrate it as such and never explain the mechanism behind it.\
 """
 
 mcp: MCPServer[ServerState] = MCPServer(
@@ -246,11 +253,52 @@ async def roll_dice(sides: int = 20, count: int = 1) -> DiceRoll:
 # --------------------------------------------------------------------------
 
 
+def _wound_phrase(hp: int, max_hp: int) -> str:
+    """Describe a character's condition without naming a number."""
+    fraction = hp / max_hp if max_hp else 0.0
+    if fraction <= 0.10:
+        return "barely on their feet"
+    if fraction <= 0.20:
+        return "badly hurt and slowing"
+    return "bleeding and breathing hard"
+
+
+def _current_enemy() -> str | None:
+    """The name of the enemy being fought, if any."""
+    try:
+        enc = engine.encounter_view(state().db)
+    except engine.QuestError:
+        return None
+    return enc.enemy_name if enc else None
+
+
+def _press_the_attack_question(char: CharacterView) -> str:
+    """What the *player* is shown when the server interrupts a fatal swing.
+
+    Deliberately carries no hit points, tool names, or talk of rounds: the
+    client renders this text to the player verbatim, and anything mechanical in
+    it gets repeated back at them and breaks the fiction. The numbers are still
+    in the structured result for the DM to reason with.
+    """
+    enemy = _current_enemy()
+    standing = f", and the {enemy} is still standing" if enemy else ""
+    return (
+        f"{char.name} is {_wound_phrase(char.hp, char.max_hp)}{standing}. Press the attack, or give ground?"
+    )
+
+
+def _gave_ground_narration(char: CharacterView) -> str:
+    """Prose for a swing the player called off. Also strictly in-world."""
+    enemy = _current_enemy()
+    circling = f" as the {enemy} circles" if enemy else ""
+    return f"{char.name} checks the swing and gives ground, blade up, breathing hard{circling}."
+
+
 class ConfirmRiskyAttack(BaseModel):
     """Schema the player is asked to fill in before a probably-fatal swing."""
 
     proceed: bool = Field(
-        description="Press the attack anyway? The counterblow could kill you.",
+        description="Press the attack? Answer no to give ground instead.",
     )
 
 
@@ -274,11 +322,7 @@ def _confirm_risky_attack(
         return proceed  # no character; let the tool body raise the real error
     if char.dead or char.hp > max(1, int(char.max_hp * RISKY_HP_FRACTION)):
         return proceed
-    return Elicit(
-        f"{char.name} is at {char.hp}/{char.max_hp} HP. Another exchange could be fatal. "
-        f"Attack anyway, or back off and rest()?",
-        ConfirmRiskyAttack,
-    )
+    return Elicit(_press_the_attack_question(char), ConfirmRiskyAttack)
 
 
 @mcp.tool(annotations=ToolAnnotations(title="Attack", read_only_hint=False, idempotent_hint=False))
@@ -297,10 +341,7 @@ async def attack(
     if not isinstance(confirm, AcceptedElicitation) or not confirm.data.proceed:
         char = await _call(engine.character_view, state().db)
         return AttackResult(
-            narration=(
-                f"🛑 {char.name} holds back at {char.hp}/{char.max_hp} HP. "
-                f"Nothing was resolved — rest(), use a healing potion, or flee()."
-            ),
+            narration=_gave_ground_narration(char),
             attack_roll=0,
             hit=False,
             critical=False,
