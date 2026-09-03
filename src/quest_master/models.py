@@ -41,6 +41,13 @@ class EncounterView(BaseModel):
     max_hp: int
     tier: int
     rounds: int
+    recommended_level: int = Field(description="Character level at which this enemy is a fair fight.")
+    threat: str = Field(
+        description=(
+            "How this fight looks for the current character: trivial, fair, "
+            "dangerous, deadly, or hopeless. Warn the player before they commit."
+        )
+    )
 
 
 class Rewards(BaseModel):

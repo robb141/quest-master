@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from quest_master import engine
-from quest_master.content import BESTIARY, REST_FUEL, WEAPONS
+from quest_master.content import BESTIARY, REST_FUEL, WEAPONS, threat_label
 from quest_master.db import Database, connect
 from quest_master.engine import QuestError, xp_threshold
 
@@ -472,3 +472,62 @@ def test_no_narration_leaks_a_function_name(db: Database, rng: random.Random) ->
     for tool, narration in every_narration(db, rng):
         assert "()" not in narration, f"{tool} leaks a function name: {narration!r}"
         assert "quest://" not in narration, f"{tool} leaks a resource URI: {narration!r}"
+
+
+# --------------------------------------------------------------------------
+# Balance
+# --------------------------------------------------------------------------
+
+
+def test_threat_labels_track_the_recommended_level() -> None:
+    goblin, ogre = BESTIARY["goblin"], BESTIARY["ogre"]  # fair from 1 and 7
+    assert threat_label(1, goblin) == "fair"
+    assert threat_label(4, goblin) == "trivial"
+    assert threat_label(1, ogre) == "hopeless"
+    assert threat_label(6, ogre) == "dangerous"
+    assert threat_label(7, ogre) == "fair"
+
+
+def test_every_monster_declares_a_recommended_level() -> None:
+    for monster in BESTIARY.values():
+        assert monster.recommended_level >= 1
+        assert monster.recommended_level >= monster.tier - 1, monster.key
+
+
+def test_tier_mates_are_comparably_hard() -> None:
+    """The dire wolf used to be a 32% fight at level 1 while its tier-mate the
+    skeleton was 54%, purely because of +1 on its damage die."""
+    wolf, skeleton = BESTIARY["wolf"], BESTIARY["skeleton"]
+    assert wolf.tier == skeleton.tier
+    assert wolf.recommended_level == skeleton.recommended_level
+    assert abs(wolf.hp - skeleton.hp) <= 2
+    assert wolf.damage.count == skeleton.damage.count
+    assert wolf.damage.sides + wolf.damage.bonus == skeleton.damage.sides + skeleton.damage.bonus
+
+
+def test_a_level_one_character_beats_a_starter_monster_most_of_the_time(tmp_path: Path) -> None:
+    """The first fight a new player picks has to be winnable, or the game ends
+    before it starts. Measured, not assumed."""
+    wins = 0
+    trials = 60
+    for seed in range(trials):
+        database = connect(tmp_path / f"b{seed}.db")
+        try:
+            local = random.Random(seed)
+            engine.create_character(database, local, "Probe", "rogue")
+            result = engine.attack(database, local, "goblin")
+            while not (result.enemy_defeated or result.character_died):
+                result = engine.attack(database, local)
+            wins += result.enemy_defeated
+        finally:
+            database.close()
+    assert wins / trials >= 0.7, f"a level-1 character wins only {wins}/{trials} against a goblin"
+
+
+def test_an_ongoing_fight_reports_its_threat(db: Database, rng: random.Random) -> None:
+    """The DM needs this to warn the player before the next swing, not after."""
+    hero(db, rng)
+    result = engine.attack(db, rng, "ogre")
+    assert result.encounter is not None
+    assert result.encounter.threat == "hopeless"
+    assert result.encounter.recommended_level == BESTIARY["ogre"].recommended_level

@@ -56,7 +56,7 @@ from mcp_types import (
 from pydantic import BaseModel, Field
 
 from quest_master import engine
-from quest_master.content import CONSUMABLES, TRINKETS, WEAPONS
+from quest_master.content import CONSUMABLES, TRINKETS, WEAPONS, threat_label
 from quest_master.db import Database, connect
 from quest_master.models import (
     AttackResult,
@@ -138,6 +138,10 @@ repeatedly to resolve a fight round by round — the enemy's HP persists between
 calls, so do not restart the fight each turn. If the character falls, only
 revive() can continue that save. Turn each tool's `narration` into vivid prose
 and offer the player two or three concrete choices.
+
+Every fight reports a `threat` — trivial, fair, dangerous, deadly or hopeless —
+for the character as they stand. Warn the player plainly before they commit to
+anything above "fair", and steer new characters at rats and goblins first.
 
 Stay in character. Hit points, damage and dice are ordinary table talk — state
 them freely, and give the player the numbers they need to make a decision. What
@@ -490,8 +494,15 @@ async def describe_enemy(
     monster = await _call(engine.resolve_for_description, state().db, enemy_name)
     stats = (
         f"**{monster.name}** — tier {monster.tier}, {monster.hp} HP, armour {monster.armor}, "
-        f"attack +{monster.attack_bonus}, damage {monster.damage}."
+        f"attack +{monster.attack_bonus}, damage {monster.damage}. "
+        f"A fair fight from level {monster.recommended_level}."
     )
+    try:
+        level = (await _call(engine.character_view, state().db)).level
+    except engine.QuestError:
+        pass
+    else:
+        stats += f" For a level {level} character this is **{threat_label(level, monster)}**."
     if flavour is None:
         return f"{stats}\n\n_(Client does not support sampling, so no generated description.)_"
     content = flavour.content
@@ -567,18 +578,29 @@ def current_encounter() -> str:
 @mcp.resource("quest://bestiary", name="Bestiary", mime_type="text/markdown")
 def bestiary() -> str:
     """Every named monster the engine knows, with its stats."""
-    lines = [
-        "# Bestiary",
-        "",
-        "| Monster | Tier | HP | Armour | Attack | Damage |",
-        "|---|---|---|---|---|---|",
-    ]
+    try:
+        level: int | None = engine.character_view(state().db).level
+    except engine.QuestError:
+        level = None
+
+    header = "| Monster | Tier | HP | Armour | Attack | Damage | Fair from |"
+    divider = "|---|---|---|---|---|---|---|"
+    if level is not None:
+        header += f" For {level}? |"
+        divider += "---|"
+    lines = ["# Bestiary", "", header, divider]
+    for m in engine.bestiary_entries():
+        row = (
+            f"| {m.name} | {m.tier} | {m.hp} | {m.armor} | +{m.attack_bonus} | "
+            f"{m.damage} | level {m.recommended_level} |"
+        )
+        if level is not None:
+            row += f" {threat_label(level, m)} |"
+        lines.append(row)
     lines += [
-        f"| {m.name} | {m.tier} | {m.hp} | {m.armor} | +{m.attack_bonus} | {m.damage} |"
-        for m in engine.bestiary_entries()
-    ]
-    lines += [
         "",
+        '"Fair from" is the level at which a character with matching gear wins about',
+        "four fights in five; the numbers come from simulated combat, not from the tier.",
         "Any other enemy name is matched against these, or becomes a generic monster",
         "scaled to the character's level.",
     ]

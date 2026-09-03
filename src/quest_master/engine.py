@@ -31,6 +31,7 @@ from quest_master.content import (
     monster_from_encounter,
     resolve_monster,
     sell_price,
+    threat_label,
 )
 from quest_master.db import Database
 from quest_master.models import (
@@ -217,7 +218,7 @@ def _get_encounter(conn: sqlite3.Connection, character_id: int) -> _Encounter | 
     )
 
 
-def _encounter_view(enc: _Encounter) -> EncounterView:
+def _encounter_view(enc: _Encounter, character_level: int) -> EncounterView:
     return EncounterView(
         enemy_name=enc.monster.name,
         monster_key=enc.monster.key,
@@ -225,6 +226,8 @@ def _encounter_view(enc: _Encounter) -> EncounterView:
         max_hp=enc.max_hp,
         tier=enc.monster.tier,
         rounds=enc.rounds,
+        recommended_level=enc.monster.recommended_level,
+        threat=threat_label(character_level, enc.monster),
     )
 
 
@@ -545,7 +548,7 @@ def attack(db: Database, rng: Random, enemy_name: str | None = None) -> AttackRe
             character_died=died,
             levels_gained=levels_gained,
             rewards=rewards,
-            encounter=None if (defeated or died) else _encounter_view(enc),
+            encounter=None if (defeated or died) else _encounter_view(enc, fresh.level),
             character=_view(conn, fresh),
         )
 
@@ -757,7 +760,7 @@ def encounter_view(db: Database) -> EncounterView | None:
     with db.reading() as conn:
         char = _active(conn)
         enc = _get_encounter(conn, char.id)
-        return _encounter_view(enc) if enc else None
+        return _encounter_view(enc, char.level) if enc else None
 
 
 def log_entries(db: Database, limit: int = 50) -> list[tuple[str, str]]:

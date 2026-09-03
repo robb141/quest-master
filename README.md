@@ -81,12 +81,17 @@ The rules that matter:
   their gold — or you start a new save.
 - **Gear matters.** Your equipped weapon sets your damage dice, so `buy` a better one and
   `equip` it. Potions heal, elixirs raise max HP, trinkets are just money.
+- **Enemies are ranked.** Every monster declares the level from which it is a fair fight,
+  and every fight reports a threat — trivial, fair, dangerous, deadly or hopeless — for
+  the character as they stand. Read `quest://bestiary` before picking a fight.
 - **Saves are separate.** `create_character` opens a new slot rather than overwriting;
   `list_characters` and `switch_character` move between them.
 
 ## Layout
 
 ```
+tools/
+  simulate_balance.py   plays thousands of real fights to measure win rates
 src/quest_master/
   db.py        SQLite connection + ordered schema migrations
   content.py   bestiary, weapons, consumables, shop  (balance lives here)
@@ -97,6 +102,23 @@ tests/         pytest, against throwaway databases with seeded dice
 ```
 
 `server.py` at the repo root is a shim that keeps v0.1 MCP registrations working.
+
+## Balance
+
+The `recommended_level` on each monster is measured, not guessed —
+`python tools/simulate_balance.py` plays 400 real fights per matchup through the engine
+and reports win rate and median fight length:
+
+```
+monster              L1/rusty     L2/short     L4/battl     L6/warha
+rat                 100%/   3    100%/   3    100%/   2    100%/   1
+goblin               84%/   6     99%/   5    100%/   3    100%/   2
+wolf                 58%/   7     94%/   6    100%/   4    100%/   3
+bandit                8%/   7     48%/   8     98%/   6    100%/   4
+dragon                0%/   2      0%/   3      0%/   4      0%/   5
+```
+
+The dragon is a genuine endgame fight: 20% at level 10, 94% at level 14.
 
 ## Upgrading from v0.1
 

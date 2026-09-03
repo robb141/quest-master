@@ -53,20 +53,113 @@ class Monster:
     gold: tuple[int, int]
     loot: tuple[str, ...] = ()
     loot_chance: float = 0.25
+    recommended_level: int = 1
+    """Character level at which this is a fair fight (~80% win with gear to
+    match). Measured by simulation rather than derived from `tier`: two
+    monsters of the same tier can play very differently."""
 
 
 BESTIARY: dict[str, Monster] = {
     m.key: m
     for m in (
-        Monster("rat", "giant rat", 1, 7, 9, 0, Dice(1, 4), (4, 8), (0, 3), ("rat tail",)),
-        Monster("goblin", "goblin", 1, 12, 11, 1, Dice(1, 6), (8, 14), (3, 9), ("healing potion", "ration")),
-        Monster("wolf", "dire wolf", 2, 18, 12, 2, Dice(1, 6, 1), (14, 22), (0, 6), ("wolf pelt",)),
-        Monster("skeleton", "skeleton", 2, 16, 13, 2, Dice(1, 6), (14, 22), (5, 14), ("bone charm",)),
-        Monster("bandit", "bandit", 3, 24, 13, 3, Dice(1, 8), (22, 34), (12, 30), ("short sword", "ration")),
-        Monster("orc", "orc raider", 4, 34, 14, 4, Dice(1, 8, 1), (34, 50), (18, 40), ("battleaxe",)),
-        Monster("troll", "cave troll", 5, 46, 15, 5, Dice(1, 10), (50, 70), (25, 55), ("elixir of vigor",)),
-        Monster("wraith", "wraith", 6, 42, 16, 6, Dice(2, 6), (60, 85), (30, 70), ("bone charm",), 0.4),
-        Monster("ogre", "ogre", 6, 60, 15, 6, Dice(1, 12), (65, 90), (40, 85), ("warhammer",)),
+        Monster(
+            "rat", "giant rat", 1, 7, 9, 0, Dice(1, 4), (4, 8), (0, 3), ("rat tail",), recommended_level=1
+        ),
+        Monster(
+            "goblin",
+            "goblin",
+            1,
+            12,
+            11,
+            1,
+            Dice(1, 6),
+            (8, 14),
+            (3, 9),
+            ("healing potion", "ration"),
+            recommended_level=1,
+        ),
+        Monster(
+            "wolf",
+            "dire wolf",
+            2,
+            16,
+            12,
+            2,
+            Dice(1, 6),
+            (14, 22),
+            (0, 6),
+            ("wolf pelt",),
+            recommended_level=2,
+        ),
+        Monster(
+            "skeleton",
+            "skeleton",
+            2,
+            16,
+            13,
+            2,
+            Dice(1, 6),
+            (14, 22),
+            (5, 14),
+            ("bone charm",),
+            recommended_level=2,
+        ),
+        Monster(
+            "bandit",
+            "bandit",
+            3,
+            24,
+            13,
+            3,
+            Dice(1, 8),
+            (22, 34),
+            (12, 30),
+            ("short sword", "ration"),
+            recommended_level=3,
+        ),
+        Monster(
+            "orc",
+            "orc raider",
+            4,
+            34,
+            14,
+            4,
+            Dice(1, 8, 1),
+            (34, 50),
+            (18, 40),
+            ("battleaxe",),
+            recommended_level=5,
+        ),
+        Monster(
+            "troll",
+            "cave troll",
+            5,
+            46,
+            15,
+            5,
+            Dice(1, 10),
+            (50, 70),
+            (25, 55),
+            ("elixir of vigor",),
+            recommended_level=6,
+        ),
+        Monster(
+            "wraith",
+            "wraith",
+            6,
+            42,
+            16,
+            6,
+            Dice(2, 6),
+            (60, 85),
+            (30, 70),
+            ("bone charm",),
+            0.4,
+            recommended_level=7,
+        ),
+        Monster(
+            "ogre", "ogre", 6, 60, 15, 6, Dice(1, 12), (65, 90), (40, 85), ("warhammer",), recommended_level=7
+        ),
         Monster(
             "dragon",
             "ancient dragon",
@@ -79,6 +172,7 @@ BESTIARY: dict[str, Monster] = {
             (150, 400),
             ("flametongue", "greater healing potion"),
             0.9,
+            recommended_level=14,
         ),
     )
 }
@@ -124,6 +218,7 @@ def wandering_monster(name: str, tier: int) -> Monster:
         xp=(8 * tier, 14 * tier),
         gold=(2 * tier, 9 * tier),
         loot=("healing potion", "ration"),
+        recommended_level=tier,
     )
 
 
@@ -211,3 +306,29 @@ def known_item(item: str) -> bool:
 
 
 PROGRESSION_LOOT: tuple[str, ...] = tuple(WEAPONS) + tuple(CONSUMABLES) + tuple(TRINKETS)
+
+
+# --------------------------------------------------------------------------
+# Threat
+# --------------------------------------------------------------------------
+
+THREAT_LEVELS: tuple[str, ...] = ("hopeless", "deadly", "dangerous", "fair", "trivial")
+
+
+def threat_label(character_level: int, monster: Monster) -> str:
+    """How a fight with `monster` looks for a character of this level.
+
+    The bestiary lists raw stats, which say nothing about whether a fight is
+    survivable. This exists so the DM can warn a player before the first swing
+    instead of after the funeral.
+    """
+    delta = character_level - monster.recommended_level
+    if delta >= 3:
+        return "trivial"
+    if delta >= 0:
+        return "fair"
+    if delta >= -1:
+        return "dangerous"
+    if delta >= -3:
+        return "deadly"
+    return "hopeless"

@@ -47,5 +47,6 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 [tool.mypy]
 python_version = "3.11"
 files = ["src", "tests"]
+exclude = ["^tools/"]
 strict = true
 warn_unused_ignores = true
