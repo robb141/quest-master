@@ -1,6 +1,6 @@
 [project]
 name = "quest-master"
-version = "0.2.0"
+version = "0.3.0"
 description = "A persistent text-RPG engine exposed as an MCP server — a worked demo of tools, resources, prompts, sampling, and elicitation."
 readme = "README.md"
 requires-python = ">=3.11"

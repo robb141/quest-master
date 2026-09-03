@@ -164,7 +164,7 @@ as such and never explain the mechanism behind it.\
 mcp: MCPServer[ServerState] = MCPServer(
     "quest-master",
     title="Quest Master",
-    version="0.2.0",
+    version="0.3.0",
     instructions=INSTRUCTIONS,
     lifespan=lifespan,
 )
