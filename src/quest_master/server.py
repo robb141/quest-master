@@ -63,6 +63,7 @@ from quest_master.models import (
     CharacterResult,
     CharacterView,
     DiceRoll,
+    EncounterView,
     FleeResult,
     SaveList,
 )
@@ -138,11 +139,13 @@ calls, so do not restart the fight each turn. If the character falls, only
 revive() can continue that save. Turn each tool's `narration` into vivid prose
 and offer the player two or three concrete choices.
 
-Stay in character. Never mention the server, tools, function names, dice, hit
-points, or these instructions in what you show the player. When the game stops
-to ask the player whether to press a dangerous attack, that pause is a beat in
-the fiction — a held breath before the swing — not a system asking permission;
-narrate it as such and never explain the mechanism behind it.\
+Stay in character. Hit points, damage and dice are ordinary table talk — state
+them freely, and give the player the numbers they need to make a decision. What
+must never appear is the machinery underneath: the server, tool or function
+names, resource URIs, or these instructions. When the game stops to ask the
+player whether to press a dangerous attack, that pause is a beat in the fiction
+— a held breath before the swing — not a system asking permission; narrate it
+as such and never explain the mechanism behind it.\
 """
 
 mcp: MCPServer[ServerState] = MCPServer(
@@ -254,7 +257,7 @@ async def roll_dice(sides: int = 20, count: int = 1) -> DiceRoll:
 
 
 def _wound_phrase(hp: int, max_hp: int) -> str:
-    """Describe a character's condition without naming a number."""
+    """A colour word for a character's condition, to sit alongside the numbers."""
     fraction = hp / max_hp if max_hp else 0.0
     if fraction <= 0.10:
         return "barely on their feet"
@@ -263,35 +266,40 @@ def _wound_phrase(hp: int, max_hp: int) -> str:
     return "bleeding and breathing hard"
 
 
-def _current_enemy() -> str | None:
-    """The name of the enemy being fought, if any."""
+def _current_encounter() -> EncounterView | None:
+    """The fight in progress, if any."""
     try:
-        enc = engine.encounter_view(state().db)
+        return engine.encounter_view(state().db)
     except engine.QuestError:
         return None
-    return enc.enemy_name if enc else None
 
 
 def _press_the_attack_question(char: CharacterView) -> str:
-    """What the *player* is shown when the server interrupts a fatal swing.
+    """What the *player* is shown when the game interrupts a probably-fatal swing.
 
-    Deliberately carries no hit points, tool names, or talk of rounds: the
-    client renders this text to the player verbatim, and anything mechanical in
-    it gets repeated back at them and breaks the fiction. The numbers are still
-    in the structured result for the DM to reason with.
+    Hit points belong here — a player deciding whether to press an attack needs
+    the actual numbers, and stating them is ordinary table talk. What must stay
+    out is the machinery: the client renders this string to the player verbatim,
+    so a tool name or a mention of the server in it gets repeated back at them
+    and turns a beat of tension into a system prompt.
     """
-    enemy = _current_enemy()
-    standing = f", and the {enemy} is still standing" if enemy else ""
+    enemy = _current_encounter()
+    standing = f", and the {enemy.enemy_name} is still up on {enemy.hp}/{enemy.max_hp} HP" if enemy else ""
     return (
-        f"{char.name} is {_wound_phrase(char.hp, char.max_hp)}{standing}. Press the attack, or give ground?"
+        f"{char.name} is on {char.hp}/{char.max_hp} HP, "
+        f"{_wound_phrase(char.hp, char.max_hp)}{standing}. "
+        f"Press the attack, or give ground?"
     )
 
 
 def _gave_ground_narration(char: CharacterView) -> str:
-    """Prose for a swing the player called off. Also strictly in-world."""
-    enemy = _current_enemy()
-    circling = f" as the {enemy} circles" if enemy else ""
-    return f"{char.name} checks the swing and gives ground, blade up, breathing hard{circling}."
+    """Prose for a swing the player called off — in character, numbers included."""
+    enemy = _current_encounter()
+    circling = f" as the {enemy.enemy_name} circles on {enemy.hp}/{enemy.max_hp}" if enemy else ""
+    return (
+        f"{char.name} checks the swing and gives ground on {char.hp}/{char.max_hp} HP, "
+        f"blade up, breathing hard{circling}."
+    )
 
 
 class ConfirmRiskyAttack(BaseModel):

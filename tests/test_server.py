@@ -249,10 +249,14 @@ async def test_a_client_without_elicitation_is_never_asked(db_file: Path) -> Non
         assert data_of(swung)["attack_roll"] > 0
 
 
-async def test_player_facing_text_never_leaks_mechanics(db_file: Path) -> None:
+async def test_player_facing_text_never_leaks_implementation_details(db_file: Path) -> None:
     """Regression: the confirmation prompt and the declined-swing narration are
-    rendered to the player, so tool names, hit points and talk of rounds in them
-    get echoed back and break character."""
+    rendered to the player verbatim, so a tool name or a mention of the server
+    in them gets echoed back and breaks character.
+
+    Hit points are deliberately allowed — a player deciding whether to press an
+    attack needs the numbers, and stating them is ordinary table talk.
+    """
     asked: list[str] = []
 
     async def capture(context: ClientRequestContext, params: types.ElicitRequestParams) -> types.ElicitResult:
@@ -266,12 +270,13 @@ async def test_player_facing_text_never_leaks_mechanics(db_file: Path) -> None:
 
     assert asked, "the low-HP confirmation never fired"
     for text in (*asked, narration):
-        assert not any(ch.isdigit() for ch in text), f"leaks a number: {text!r}"
         assert "()" not in text, f"leaks a function name: {text!r}"
+        assert "quest://" not in text, f"leaks a resource URI: {text!r}"
         lowered = text.lower()
-        # Whole words only — "give ground" legitimately contains "round".
-        for banned in ("server", "hp", "tool", "tools", "resolved", "round", "dice"):
+        for banned in ("server", "tool", "tools", "function", "mcp", "structured"):
             assert not re.search(rf"\b{banned}\b", lowered), f"leaks {banned!r}: {text!r}"
+        # ...and the numbers the player needs are present.
+        assert re.search(r"\d+/\d+", text), f"no hit points shown: {text!r}"
 
 
 # --------------------------------------------------------------------------
