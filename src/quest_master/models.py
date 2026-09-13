@@ -68,6 +68,7 @@ class CharacterResult(BaseModel):
 
     narration: str
     character: CharacterView
+    not_used: int
 
 
 class AttackResult(BaseModel):
